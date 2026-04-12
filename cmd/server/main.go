@@ -31,7 +31,7 @@ func main() {
 	})
 	app.Use(logger.New())
 
-	handlers.Register(app, gdb, cfg.AllowedOrigins)
+	handlers.Register(app, gdb, cfg.AllowedOrigins, cfg.InternalAPISecret)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("listening on %s", addr)

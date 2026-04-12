@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"expenses-backend/internal/db"
+	"expenses-backend/internal/middleware"
 	"expenses-backend/internal/models"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,7 +19,7 @@ type Handlers struct {
 	DB *gorm.DB
 }
 
-func Register(app *fiber.App, gdb *gorm.DB, allowedOrigins string) {
+func Register(app *fiber.App, gdb *gorm.DB, allowedOrigins, internalSecret string) {
 	h := &Handlers{DB: gdb}
 
 	parts := strings.Split(allowedOrigins, ",")
@@ -29,12 +30,13 @@ func Register(app *fiber.App, gdb *gorm.DB, allowedOrigins string) {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     origins,
 		AllowMethods:     "GET,POST,PATCH,DELETE,OPTIONS",
-		AllowHeaders:     "Origin, Content-Type, Accept",
+		AllowHeaders:     "Origin, Content-Type, Accept, X-Internal-Secret, X-Clerk-User-Id",
 		AllowCredentials: origins != "*" && origins != "",
 	}))
 
 	app.Get("/health", h.Health)
 	api := app.Group("/api")
+	api.Use(middleware.InternalAuth(internalSecret))
 	api.Get("/categories", h.ListCategories)
 	api.Get("/expenses", h.ListExpenses)
 	api.Post("/expenses", h.CreateExpense)
@@ -89,11 +91,28 @@ func toExpenseResponse(e models.Expense) expenseResponse {
 	return out
 }
 
+func clerkUserID(c *fiber.Ctx) (string, bool) {
+	v := c.Locals(middleware.CtxClerkUserID)
+	if v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok && s != ""
+}
+
+func (h *Handlers) expenseBaseQuery(c *fiber.Ctx) *gorm.DB {
+	q := h.DB.Model(&models.Expense{})
+	if id, ok := clerkUserID(c); ok {
+		q = q.Where("clerk_user_id = ?", id)
+	}
+	return q
+}
+
 func (h *Handlers) ListExpenses(c *fiber.Ctx) error {
 	fromStr := c.Query("from")
 	toStr := c.Query("to")
 
-	q := h.DB.Model(&models.Expense{}).Preload("Category").Order("occurred_at DESC, id DESC")
+	q := h.expenseBaseQuery(c).Preload("Category").Order("occurred_at DESC, id DESC")
 
 	if fromStr != "" {
 		from, err := time.Parse("2006-01-02", fromStr)
@@ -170,10 +189,13 @@ func (h *Handlers) CreateExpense(c *fiber.Ctx) error {
 		Note:        body.Note,
 		OccurredAt:  occurred.UTC(),
 	}
+	if uid, ok := clerkUserID(c); ok {
+		exp.ClerkUserID = &uid
+	}
 	if err := h.DB.Create(&exp).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	if err := h.DB.Preload("Category").First(&exp, exp.ID).Error; err != nil {
+	if err := h.expenseBaseQuery(c).Preload("Category").First(&exp, exp.ID).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 	return c.Status(fiber.StatusCreated).JSON(toExpenseResponse(exp))
@@ -199,8 +221,9 @@ func (h *Handlers) UpdateExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "no fields to update")
 	}
 
+	q := h.expenseBaseQuery(c).Preload("Category")
 	var exp models.Expense
-	if err := h.DB.First(&exp, uint(id)).Error; err != nil {
+	if err := q.First(&exp, uint(id)).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return fiber.NewError(fiber.StatusNotFound, "not found")
 		}
@@ -246,10 +269,10 @@ func (h *Handlers) UpdateExpense(c *fiber.Ctx) error {
 	if len(updates) == 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "no fields to update")
 	}
-	if err := h.DB.Model(&exp).Updates(updates).Error; err != nil {
+	if err := h.DB.Model(&exp).Where("id = ?", uint(id)).Updates(updates).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
-	if err := h.DB.Preload("Category").First(&exp, uint(id)).Error; err != nil {
+	if err := h.expenseBaseQuery(c).Preload("Category").First(&exp, uint(id)).Error; err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 	return c.JSON(toExpenseResponse(exp))
@@ -260,7 +283,7 @@ func (h *Handlers) DeleteExpense(c *fiber.Ctx) error {
 	if err != nil || id <= 0 {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid id")
 	}
-	res := h.DB.Delete(&models.Expense{}, uint(id))
+	res := h.expenseBaseQuery(c).Where("id = ?", uint(id)).Delete(&models.Expense{})
 	if res.Error != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, res.Error.Error())
 	}

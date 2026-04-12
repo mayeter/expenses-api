@@ -8,9 +8,10 @@ import (
 )
 
 type Config struct {
-	Port           string
-	DatabaseURL    string
-	AllowedOrigins string
+	Port                string
+	DatabaseURL         string
+	AllowedOrigins      string
+	InternalAPISecret   string // boş: yerel deneme; dolu: BFF + Clerk başlıkları zorunlu
 }
 
 func Load() Config {
@@ -32,8 +33,9 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:           port,
-		DatabaseURL:    dsn,
-		AllowedOrigins: origins,
+		Port:              port,
+		DatabaseURL:       dsn,
+		AllowedOrigins:    origins,
+		InternalAPISecret: os.Getenv("INTERNAL_API_SECRET"),
 	}
 }

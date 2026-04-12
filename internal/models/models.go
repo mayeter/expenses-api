@@ -17,9 +17,10 @@ type Category struct {
 }
 
 type Expense struct {
-	ID          uint           `gorm:"primaryKey" json:"id"`
-	UserID      *uint          `gorm:"index" json:"-"` // ileride auth; şimdilik NULL
-	CategoryID  uint           `gorm:"index;not null" json:"categoryId"`
+	ID           uint           `gorm:"primaryKey" json:"id"`
+	UserID       *uint          `gorm:"index" json:"-"` // ileride dahili kullanıcı PK
+	ClerkUserID  *string        `gorm:"size:191;index" json:"-"` // Clerk `sub`; BFF ile doldurulur
+	CategoryID   uint           `gorm:"index;not null" json:"categoryId"`
 	Category    Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
 	AmountMinor int64          `gorm:"not null" json:"-"` // kuruş (TRY)
 	Note        string         `gorm:"size:512" json:"note"`
