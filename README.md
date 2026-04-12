@@ -1,6 +1,6 @@
 # Expenses API (MVP)
 
-Tek kullanıcı / tek liste senaryosu için harcama kayıtlarını saklayan REST API.
+Tek kullanıcı / tek liste senaryosu için harcama kayıtlarını saklayan REST API. **Sonraki aşama:** çoklu kullanıcı (`user_id`), isteğe bağlı **Next BFF** arkasında `INTERNAL_SECRET`, ileride **native istemci** için JWT (Clerk JWKS) doğrulama.
 
 ## Stack
 
@@ -8,12 +8,10 @@ Tek kullanıcı / tek liste senaryosu için harcama kayıtlarını saklayan REST
 |--------|--------|
 | Dil | **Go 1.22+** |
 | HTTP | **[Fiber](https://gofiber.io/)** v2 |
-| Veritabanı | **PostgreSQL** (ilişkisel; raporlama ve ileride çoklu kullanıcı için uygun) |
+| Veritabanı | **PostgreSQL** |
 | ORM | **GORM** |
 
-**Neden SQL / Postgres:** Harcama satırları ile kategoriler arasında net FK ilişkisi var; günlük ve kategori kırılımlı sorgular için Postgres yeterli ve bariz. NoSQL bu MVP için ek karmaşıklık sağlamaz.
-
-**Hosting:** Railway, Render, Fly.io veya Supabase (Postgres connection string) ile uyumludur. İstersen kökteki `Dockerfile` ile container deploy edebilirsin.
+**Hosting:** Railway, Render, Fly.io vb. `Dockerfile` ile container deploy.
 
 ## API
 
@@ -21,60 +19,40 @@ Tek kullanıcı / tek liste senaryosu için harcama kayıtlarını saklayan REST
 |--------|------|----------|
 | GET | `/health` | Sağlık kontrolü |
 | GET | `/api/categories` | Kategoriler (ilk çalıştırmada seed) |
-| GET | `/api/expenses` | Liste. Query: `from`, `to` — `YYYY-MM-DD` (UTC günü, MVP) |
+| GET | `/api/expenses` | Liste. Query: `from`, `to` — `YYYY-MM-DD` (MVP) |
 | POST | `/api/expenses` | Yeni harcama |
+| PATCH | `/api/expenses/:id` | Kısmi güncelleme (`amount`, `categoryId`, `note`, `occurredAt`) |
 | DELETE | `/api/expenses/:id` | Sil (soft delete) |
 
-**POST /api/expenses** gövdesi:
+**POST / PATCH gövdesi örneği:** `amount` (TL, ondalık), `categoryId`, `note?`, `occurredAt?` (`RFC3339` veya `YYYY-MM-DD`). Yanıtlarda `currency: "TRY"`; `userId` doluysa döner (şimdilik çoğunlukla `null`).
 
-```json
-{
-  "amount": 149.99,
-  "categoryId": 1,
-  "note": "opsiyonel",
-  "occurredAt": "2026-04-08T12:00:00Z"
-}
-```
+## Şema notu
 
-- `amount`: **TL**, ondalıklı; sunucu kuruşa yuvarlar (`AmountMinor`).
-- `occurredAt` yoksa: şu anki UTC zaman.
-- `occurredAt` için `RFC3339` veya `YYYY-MM-DD` kabul edilir.
-
-Yanıtlarda `currency` alanı şimdilik sabit `"TRY"`.
+- `expenses.user_id` — nullable, index; auth sonrası doldurulacak.
 
 ## Yerel geliştirme
 
-1. Postgres’i ayağa kaldır:
-
 ```bash
 docker compose up -d
-```
-
-2. Ortam dosyası:
-
-```bash
 cp .env.example .env
-```
-
-3. Çalıştır:
-
-```bash
 go run ./cmd/server
 ```
 
-Sunucu varsayılan **:8080**.
+Varsayılan port **:8080**.
 
 ## Ortam değişkenleri
 
 | Değişken | Zorunlu | Açıklama |
 |----------|---------|----------|
-| `DATABASE_URL` | evet | Postgres DSN (`sslmode=require` Supabase vb. için) |
+| `DATABASE_URL` | evet | Postgres DSN |
 | `PORT` | hayır | Varsayılan `8080` |
-| `ALLOWED_ORIGINS` | hayır | CORS; `*` veya `http://localhost:3000` gibi virgülle ayrılmış liste |
+| `ALLOWED_ORIGINS` | hayır | CORS; BFF sonrası daraltılabilir (`*` yerine Vercel origin) |
 
-## Vercel notu
+**Planlanan (auth / BFF):** `INTERNAL_API_SECRET` — yalnızca Next sunucusunun Go’ya erişmesi için paylaşılan sır (dokümantasyon kod ile birlikte güncellenecek).
 
-Bu proje klasik **sürekli çalışan HTTP sunucusu** modelindedir; Vercel’de Node serverless yerine **Railway / Render / Fly** daha doğrudan uyumludur. Frontend yine Vercel’de kalabilir; `NEXT_PUBLIC_API_URL` ile bu API’ye bağlanır.
+## Vercel
+
+Bu servis **sürekli dinleyen** bir API’dir; tipik olarak **Render / Railway / Fly** üzerinde çalışır. Frontend Vercel’de kalabilir (şimdilik doğrudan URL; sonra BFF).
 
 ## Repo
 
