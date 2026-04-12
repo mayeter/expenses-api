@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"math"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func Register(app *fiber.App, gdb *gorm.DB, allowedOrigins string) {
 	origins := strings.Join(parts, ",")
 	app.Use(cors.New(cors.Config{
 		AllowOrigins:     origins,
-		AllowMethods:     "GET,POST,DELETE,OPTIONS",
+		AllowMethods:     "GET,POST,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept",
 		AllowCredentials: origins != "*" && origins != "",
 	}))
@@ -37,6 +38,7 @@ func Register(app *fiber.App, gdb *gorm.DB, allowedOrigins string) {
 	api.Get("/categories", h.ListCategories)
 	api.Get("/expenses", h.ListExpenses)
 	api.Post("/expenses", h.CreateExpense)
+	api.Patch("/expenses/:id", h.UpdateExpense)
 	api.Delete("/expenses/:id", h.DeleteExpense)
 }
 
@@ -53,14 +55,15 @@ func (h *Handlers) ListCategories(c *fiber.Ctx) error {
 }
 
 type expenseResponse struct {
-	ID          uint      `json:"id"`
-	CategoryID  uint      `json:"categoryId"`
-	Category    categoryBrief `json:"category,omitempty"`
-	Amount      float64   `json:"amount"`
-	Currency    string    `json:"currency"`
-	Note        string    `json:"note"`
-	OccurredAt  time.Time `json:"occurredAt"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID         uint           `json:"id"`
+	UserID     *uint          `json:"userId,omitempty"`
+	CategoryID uint           `json:"categoryId"`
+	Category   categoryBrief  `json:"category,omitempty"`
+	Amount     float64        `json:"amount"`
+	Currency   string         `json:"currency"`
+	Note       string         `json:"note"`
+	OccurredAt time.Time      `json:"occurredAt"`
+	CreatedAt  time.Time      `json:"createdAt"`
 }
 
 type categoryBrief struct {
@@ -72,6 +75,7 @@ type categoryBrief struct {
 func toExpenseResponse(e models.Expense) expenseResponse {
 	out := expenseResponse{
 		ID:         e.ID,
+		UserID:     e.UserID,
 		CategoryID: e.CategoryID,
 		Amount:     float64(e.AmountMinor) / 100,
 		Currency:   "TRY",
@@ -173,6 +177,82 @@ func (h *Handlers) CreateExpense(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
 	return c.Status(fiber.StatusCreated).JSON(toExpenseResponse(exp))
+}
+
+type updateExpenseBody struct {
+	Amount     *float64 `json:"amount"`
+	CategoryID *uint    `json:"categoryId"`
+	Note       *string  `json:"note"`
+	OccurredAt *string  `json:"occurredAt"`
+}
+
+func (h *Handlers) UpdateExpense(c *fiber.Ctx) error {
+	id, err := c.ParamsInt("id")
+	if err != nil || id <= 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid id")
+	}
+	var body updateExpenseBody
+	if err := c.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid JSON")
+	}
+	if body.Amount == nil && body.CategoryID == nil && body.Note == nil && body.OccurredAt == nil {
+		return fiber.NewError(fiber.StatusBadRequest, "no fields to update")
+	}
+
+	var exp models.Expense
+	if err := h.DB.First(&exp, uint(id)).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fiber.NewError(fiber.StatusNotFound, "not found")
+		}
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+
+	updates := map[string]interface{}{}
+	if body.Amount != nil {
+		minor := int64(math.Round(*body.Amount * 100))
+		if minor <= 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "amount must be positive")
+		}
+		updates["amount_minor"] = minor
+	}
+	if body.CategoryID != nil {
+		if *body.CategoryID == 0 {
+			return fiber.NewError(fiber.StatusBadRequest, "categoryId invalid")
+		}
+		cat, err := db.GetCategoryByID(h.DB, *body.CategoryID)
+		if err != nil {
+			return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+		}
+		if cat == nil {
+			return fiber.NewError(fiber.StatusBadRequest, "unknown categoryId")
+		}
+		updates["category_id"] = *body.CategoryID
+	}
+	if body.Note != nil {
+		updates["note"] = *body.Note
+	}
+	if body.OccurredAt != nil && *body.OccurredAt != "" {
+		var occurred time.Time
+		occurred, err = time.Parse(time.RFC3339, *body.OccurredAt)
+		if err != nil {
+			occurred, err = time.Parse("2006-01-02", *body.OccurredAt)
+			if err != nil {
+				return fiber.NewError(fiber.StatusBadRequest, "occurredAt must be RFC3339 or YYYY-MM-DD")
+			}
+		}
+		updates["occurred_at"] = occurred.UTC()
+	}
+
+	if len(updates) == 0 {
+		return fiber.NewError(fiber.StatusBadRequest, "no fields to update")
+	}
+	if err := h.DB.Model(&exp).Updates(updates).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	if err := h.DB.Preload("Category").First(&exp, uint(id)).Error; err != nil {
+		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
+	}
+	return c.JSON(toExpenseResponse(exp))
 }
 
 func (h *Handlers) DeleteExpense(c *fiber.Ctx) error {
