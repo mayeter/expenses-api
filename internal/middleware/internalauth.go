@@ -9,8 +9,8 @@ import (
 
 const CtxClerkUserID = "clerkUserId"
 
-// InternalAuth production’da BFF’den gelen istekleri doğrular ve Clerk kullanıcı id’sini locals’a yazar.
-// INTERNAL_API_SECRET boşsa (yerel Go-only deneme) atlanır; Clerk filtreleri de uygulanmaz.
+// InternalAuth validates BFF requests when INTERNAL_API_SECRET is set and stores Clerk user id in locals.
+// If the secret is empty, the middleware is a no-op (local Go-only / legacy).
 func InternalAuth(secret string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		if strings.TrimSpace(secret) == "" {

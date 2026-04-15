@@ -22,17 +22,17 @@ func Connect(dsn string) (*gorm.DB, error) {
 }
 
 func Migrate(gdb *gorm.DB) error {
-	return gdb.AutoMigrate(&models.Category{}, &models.Expense{})
+	return gdb.AutoMigrate(&models.Category{}, &models.ExpenseList{}, &models.Expense{})
 }
 
 var defaultCategories = []models.Category{
-	{Name: "Market", Slug: "market", SortOrder: 10},
-	{Name: "Ulaşım", Slug: "ulasim", SortOrder: 20},
-	{Name: "Faturalar", Slug: "faturalar", SortOrder: 30},
-	{Name: "Yeme / İçme", Slug: "yeme-icme", SortOrder: 40},
-	{Name: "Eğlence", Slug: "eglence", SortOrder: 50},
-	{Name: "Sağlık", Slug: "saglik", SortOrder: 60},
-	{Name: "Diğer", Slug: "diger", SortOrder: 999},
+	{Name: "Groceries", Slug: "market", SortOrder: 10},
+	{Name: "Transport", Slug: "ulasim", SortOrder: 20},
+	{Name: "Bills", Slug: "faturalar", SortOrder: 30},
+	{Name: "Food & drink", Slug: "yeme-icme", SortOrder: 40},
+	{Name: "Entertainment", Slug: "eglence", SortOrder: 50},
+	{Name: "Health", Slug: "saglik", SortOrder: 60},
+	{Name: "Other", Slug: "diger", SortOrder: 999},
 }
 
 func SeedCategories(gdb *gorm.DB) error {

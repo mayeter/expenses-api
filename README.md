@@ -1,36 +1,41 @@
 # Expenses API (MVP)
 
-Tek kullanıcı / tek liste senaryosu için harcama kayıtlarını saklayan REST API. **Sonraki aşama:** çoklu kullanıcı (`user_id`), isteğe bağlı **Next BFF** arkasında `INTERNAL_SECRET`, ileride **native istemci** için JWT (Clerk JWKS) doğrulama.
+REST API for expense records: categories, **per-user lists**, and expenses scoped by list. When `INTERNAL_API_SECRET` is set, the Next BFF must send `X-Internal-Secret` and `X-Clerk-User-Id`.
 
 ## Stack
 
-| Katman | Seçim |
-|--------|--------|
-| Dil | **Go 1.22+** |
-| HTTP | **[Fiber](https://gofiber.io/)** v2 |
-| Veritabanı | **PostgreSQL** |
-| ORM | **GORM** |
+| Layer      | Choice                          |
+| ---------- | ------------------------------- |
+| Language   | **Go 1.22+**                    |
+| HTTP       | **[Fiber](https://gofiber.io/)** v2 |
+| Database   | **PostgreSQL**                  |
+| ORM        | **GORM**                        |
 
-**Hosting:** Railway, Render, Fly.io vb. `Dockerfile` ile container deploy.
+**Hosting:** Railway, Render, Fly.io, etc. Deploy with `Dockerfile`.
 
-## API
+## API (summary)
 
-| Method | Path | Açıklama |
-|--------|------|----------|
-| GET | `/health` | Sağlık kontrolü |
-| GET | `/api/categories` | Kategoriler (ilk çalıştırmada seed) |
-| GET | `/api/expenses` | Liste. Query: `from`, `to` — `YYYY-MM-DD` (MVP) |
-| POST | `/api/expenses` | Yeni harcama |
-| PATCH | `/api/expenses/:id` | Kısmi güncelleme (`amount`, `categoryId`, `note`, `occurredAt`) |
-| DELETE | `/api/expenses/:id` | Sil (soft delete) |
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| GET | `/health` | Health check |
+| GET | `/api/categories` | Categories (seeded on first run) |
+| GET | `/api/lists?scope=mine` or `scope=shared` | User lists (`shared` empty until sharing exists) |
+| POST | `/api/lists` | Create list |
+| PATCH | `/api/lists/:listId` | Update list (`name`, `isFavorite`) |
+| DELETE | `/api/lists/:listId` | Delete list (owner; soft-deletes expenses) |
+| GET | `/api/lists/:listId/expenses` | List expenses. Query: `from`, `to` (`YYYY-MM-DD`) |
+| POST | `/api/lists/:listId/expenses` | Create expense |
+| PATCH | `/api/lists/:listId/expenses/:id` | Partial update |
+| DELETE | `/api/lists/:listId/expenses/:id` | Soft delete |
 
-**POST / PATCH gövdesi örneği:** `amount` (TL, ondalık), `categoryId`, `note?`, `occurredAt?` (`RFC3339` veya `YYYY-MM-DD`). Yanıtlarda `currency: "TRY"`; `userId` doluysa döner (şimdilik çoğunlukla `null`).
+**POST / PATCH body:** `amount` (decimal TRY), `categoryId`, optional `note`, optional `occurredAt` (`RFC3339` or `YYYY-MM-DD`). Responses use `currency: "TRY"`.
 
-## Şema notu
+## Schema notes
 
-- `expenses.user_id` — nullable, index; auth sonrası doldurulacak.
+- `expenses.clerk_user_id` — set when using Clerk + BFF.
+- `expenses.list_id` — FK to `expense_lists`.
 
-## Yerel geliştirme
+## Local development
 
 ```bash
 docker compose up -d
@@ -38,22 +43,21 @@ cp .env.example .env
 go run ./cmd/server
 ```
 
-Varsayılan port **:8080**.
+Default port **:8080**.
 
-## Ortam değişkenleri
+## Environment
 
-| Değişken | Zorunlu | Açıklama |
-|----------|---------|----------|
-| `DATABASE_URL` | evet | Postgres DSN |
-| `PORT` | hayır | Varsayılan `8080` |
-| `ALLOWED_ORIGINS` | hayır | CORS; BFF sonrası daraltılabilir (`*` yerine Vercel origin) |
-
-**Planlanan (auth / BFF):** `INTERNAL_API_SECRET` — yalnızca Next sunucusunun Go’ya erişmesi için paylaşılan sır (dokümantasyon kod ile birlikte güncellenecek).
+| Variable | Required | Description |
+| -------- | -------- | ----------- |
+| `DATABASE_URL` | yes | Postgres DSN |
+| `PORT` | no | Default `8080` |
+| `ALLOWED_ORIGINS` | no | CORS (tighten in prod, e.g. Vercel origin instead of `*`) |
+| `INTERNAL_API_SECRET` | no | Shared secret for BFF; empty skips internal auth |
 
 ## Vercel
 
-Bu servis **sürekli dinleyen** bir API’dir; tipik olarak **Render / Railway / Fly** üzerinde çalışır. Frontend Vercel’de kalabilir (şimdilik doğrudan URL; sonra BFF).
+This service is a long-running API, typically on **Render / Railway / Fly**. The Next frontend may live on Vercel and call the API via the server-side BFF proxy.
 
 ## Repo
 
-Bu dizin bağımsız bir **git** deposu olabilir.
+This directory may be a standalone **git** repository.

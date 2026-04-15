@@ -11,7 +11,7 @@ type Config struct {
 	Port                string
 	DatabaseURL         string
 	AllowedOrigins      string
-	InternalAPISecret   string // boş: yerel deneme; dolu: BFF + Clerk başlıkları zorunlu
+	InternalAPISecret   string // empty: skip internal auth; set: require BFF headers
 }
 
 func Load() Config {
